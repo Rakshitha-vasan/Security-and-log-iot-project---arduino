@@ -1,0 +1,82 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#define SS_PIN 10
+#define RST_PIN 9
+#include <Servo.h>
+
+Servo myservo;  
+int pos = 0;  
+LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
+String x; 
+
+String a;
+
+MFRC522 mfrc522(SS_PIN, RST_PIN);
+
+void setup() {
+  Serial.begin(9600);
+  SPI.begin();
+  mfrc522.PCD_Init();
+  Serial.println("Scan your RFID card...");
+  lcd.init();         // initialize the lcd
+  lcd.backlight(); 
+  pinMode(4, OUTPUT);
+  pinMode(5, OUTPUT);
+  myservo.attach(6);
+}
+
+void loop() {
+  lcd.setCursor(0,0);
+  lcd.print("scan the card");
+  delay(1000);
+  lcd.clear();
+  
+  if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
+    Serial.print("UID Tag :");
+    for (byte i = 0; i < mfrc522.uid.size; i++) {
+      Serial.print(mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
+      Serial.print(mfrc522.uid.uidByte[i], HEX);
+    }
+    
+    Serial.println();
+    mfrc522.PICC_HaltA();
+    a="sent";
+  }
+
+  if(a=="sent"){
+  while (!Serial.available()); 
+  x = Serial.readString();
+  
+  lcd.setCursor(0, 0);
+  lcd.print(x);
+
+
+  if(x=="no UID"){
+    digitalWrite(4,HIGH);
+    delay(3000);
+    digitalWrite(4,LOW);
+    myservo.write(0);
+  }else{
+    digitalWrite(5,HIGH);
+    delay(3000);
+    digitalWrite(5,LOW);
+    for (pos = 0; pos <= 180; pos += 1) { // goes from 0 degrees to 180 degrees
+   
+      myservo.write(pos);              // tell servo to go to position in variable 'pos'
+      delay(15);                       // waits 15ms for the servo to reach the position
+    }
+    for (pos = 180; pos >= 0; pos -= 1) { // goes from 180 degrees to 0 degrees
+      myservo.write(pos);              // tell servo to go to position in variable 'pos'
+      delay(15);                       // waits 15ms for the servo to reach the position
+    }
+
+  }
+  delay(3000);
+  lcd.clear();
+  a = "";
+  }
+
+
+}
