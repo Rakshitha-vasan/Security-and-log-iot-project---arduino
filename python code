@@ -1,0 +1,115 @@
+import serial
+import time
+import mysql.connector
+from datetime import datetime
+
+from gtts import gTTS
+import os
+from playsound import playsound  # You can use playsound for cross-platform audio playback
+from pygame import mixer
+mixer.init()
+# Function to convert text to speech
+def text_to_speech(text, language='en'):
+    tts = gTTS(text=text, lang=language, slow=False)
+    return tts
+
+# Function to play the generated audio file
+def play_audio(audio_file):
+    playsound(audio_file)
+
+
+
+
+# Replace these with your MySQL database credentials
+db_config = {
+    'host': 'localhost',
+    'user': 'rakshitha',
+    'password': '',
+    'database': 'rfid',
+}
+
+ser = serial.Serial('COM3', 9600)  # Replace 'COMx' with the appropriate port on your system
+
+try:
+    connection = mysql.connector.connect(**db_config)
+    cursor = connection.cursor()
+    print("Connected to MySQL database")
+
+    while True:
+        line = ser.readline().decode('utf-8').strip()
+
+        if line.startswith("UID Tag : "):
+            uid_data = line[10:]
+            print(f"Received UID: {uid_data}")
+
+            # Check if UID is present in student_info table
+            check_query = "SELECT uid, name, rollno FROM student_info WHERE uid = %s"
+            cursor.execute(check_query, (uid_data,))
+            result = cursor.fetchone()
+
+            if result:
+                uid, name, rollno = result
+
+                # Check if the candidate is logging in or out
+                login_query = "SELECT id FROM student_card2 WHERE uid = %s AND logouttime IS NULL"
+                cursor.execute(login_query, (uid_data,))
+                existing_login = cursor.fetchone()
+
+                if existing_login:
+                    # Candidate is logging out
+                    logout_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    update_query = "UPDATE student_card2 SET logouttime = %s WHERE uid = %s AND logouttime IS NULL"
+                    cursor.execute(update_query, (logout_time, uid_data))
+                    print(f"Logged out: {name} at {logout_time}")
+                    #sending to lcd
+                    x = name+" L O"
+                    ser.write(str(x).encode())
+                    # audio
+                    text = name + "Logged out" + "at" + logout_time
+                    tts = text_to_speech(text)
+                    audio_file = "outputlo.mp3"
+                    tts.save(audio_file)
+                    mixer.music.load(audio_file)
+                    mixer.music.play()
+                    
+                else:
+                    # Candidate is logging in
+                    entry_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    insert_query = "INSERT INTO student_card2 (uid, name, rollno,logintime) VALUES (%s, %s, %s,%s)"
+                    cursor.execute(insert_query, (uid, name, rollno,entry_time))
+                    print(f"Logged in: {name} at {entry_time}")
+                    x = name+" L I"
+                    ser.write(str(x).encode())
+                    text = name + "Logged in" + "at" + entry_time
+                    tts = text_to_speech(text)
+                    audio_file = "outputli.mp3"
+                    tts.save(audio_file)
+                    mixer.music.load(audio_file)
+                    mixer.music.play()
+                    
+                   
+
+                connection.commit()
+
+            else:
+                x = "no UID"
+                ser.write(str(x).encode())
+                print("Sent UID not found message back to Arduino")
+                text = "No such student found "
+                tts = text_to_speech(text)
+                audio_file = "outputnouid.mp3"
+                tts.save(audio_file)
+                mixer.music.load(audio_file)
+                mixer.music.play()
+                    
+
+        time.sleep(1)
+
+except mysql.connector.Error as e:
+    print(f"Error: {e}")
+
+finally:
+    if 'connection' in locals() and connection.is_connected():
+        cursor.close()
+        connection.close()
+        print("MySQL connection closed")
